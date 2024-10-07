@@ -76,6 +76,11 @@ no_extra_sector:
     mov bx, 0xF000        ; Offset F000h
     call read_file
 
+
+    mov si, jumping_to_stage2
+    call print_string
+
+    mov dl, [BOOT_DRIVE]  ; Drive number
     ; Jump to the loaded second-stage bootloader
     jmp 0x0000:0xF000
 
@@ -158,8 +163,6 @@ cluster_to_sector:
 read_file:
     mov ax, [FILE_SECTOR]      ; Starting sector (LBA) of the file
     mov cx, [SECTORS_TO_READ]  ; Number of sectors to read
-    mov [0xEFF0], ax
-    mov [0xEFF2], cx
     call read_sectors
     ret
 
@@ -171,9 +174,8 @@ read_sectors:
     push bx
 read_sectors_loop:
     push cx
-    mov cx, 1                 ; Read one sector at a time
-    call lba_to_chs
     push ax
+    call lba_to_chs
     mov ah, 0x02              ; BIOS Read Sector function
     mov al, 1                 ; Number of sectors to read
     mov dl, [BOOT_DRIVE]      ; Drive number
@@ -196,11 +198,12 @@ lba_to_chs:
     ; Total sectors: 80 * 2 * 18 = 2880 sectors
     push ebp
     mov ebp, esp
+    push bx
 
     xor dx, dx                 ; Clear DX
     mov cx, [SectorsPerTrack]  ; Sectors per track
     div cx                     ; AX / Sectors per track, AX = quotient (track number), DX = remainder
-    inc dl                     ; Remainder contains sector number, Sectors start at 1, so add 1
+    inc dx                     ; Remainder contains sector number, Sectors start at 1, so add 1
     push dx                    ; Save sector number
 
     xor dx, dx
@@ -210,16 +213,19 @@ lba_to_chs:
 
     ; Now handle the upper 2 bits of the cylinder and pack them into CL.
     ; CL holds the sector number in its lower 6 bits. We need to add the upper 2 bits of the cylinder to the high bits of CL.
-    pop cx                   ; CL = sector number
+    pop bx                   ; BL = sector number
+    mov cl, bl               ; CL = sector number
     and cl, 00111111b        ; Keep only the lower 6 bits for the sector number
     shl ah, 6                ; Move the upper 2 bits of the cylinder into position
     or  cl, ah               ; Combine with CL (upper 2 bits of cylinder + sector number)
     mov dh, dl               ; DH = head number (from the second division)
+    pop bx
     mov esp, ebp
     pop ebp
     ret
 
 ; Subroutine to print a null-terminated string pointed by SI
+; Input: SI = pointer to the string
 print_string:
     mov ah, 0x0E          ; BIOS Teletype output function
 print_next_char:
@@ -241,6 +247,7 @@ SECTORS_TO_READ dw 0x0000
 file_name       db 'SECONDSTBIN'  ; Filename in 8.3 format (11 bytes)
 disk_error_msg  db 'Disk Error!', 0
 file_not_found_msg db 'SECONDST.BIN not found!', 0
+jumping_to_stage2 db 'Jumping to Stage 2...', 0xd, 0xa, 0
 
 
 ; Pad the rest of the boot sector with zeros
