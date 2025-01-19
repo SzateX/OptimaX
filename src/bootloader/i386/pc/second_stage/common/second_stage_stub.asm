@@ -23,6 +23,13 @@ jump_to_kernel:
     ; Load the GDT
     lgdt [dword gdt_description]
 
+    mov bx, 0x0000
+    mov es, bx
+    ; Buffer offset
+    mov bx, 0x5C00
+    mov di, bx
+    call load_memory_map
+
     ; Jump to the kernel
     ;enter protected mode (32 bit)
     mov eax, cr0
@@ -30,6 +37,52 @@ jump_to_kernel:
     mov cr0, eax
     jmp dword 0x08:0x100000
     jmp $
+
+; Input:
+;   es - buffer segment
+;   di - buffer offset
+load_memory_map:
+    xor ebx, ebx
+
+    ; Push initial buffer address
+    push di
+
+    ; Push initial entries count
+    mov eax, 0
+    push eax
+
+    load_memory_map_loop:
+    ; Increment pointer in buffer
+    add di, 24
+
+    ; Increment entries count
+    pop eax
+    inc eax
+    push eax
+
+    ; Set magic number
+    mov edx, 0x534d4150
+
+    ; Set number of bytes to read
+    mov ecx, 24
+
+    ; Read memory map
+    mov eax, 0xe820
+    int 0x15
+
+    ; Disable interrupts (can be enabled by int 0x15)
+    cli
+
+    ; Exit if ebx is equal to zero (reading has ended)
+    cmp ebx, 0
+    jne load_memory_map_loop
+
+    ; Store entries count at the begin of the buffer
+    pop eax
+    pop di
+    mov [di], eax
+
+    ret
 
 ;gdt
 gdt_begin:

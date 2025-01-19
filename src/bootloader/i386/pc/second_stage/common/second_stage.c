@@ -1,20 +1,20 @@
 #include <stdint.h>
 
 extern void jump_to_kernel(void);
-void print_string(const char* str);
-void lba_to_chs(uint32_t lba, uint8_t* head, uint8_t* cylinder, uint8_t* sector);
-uint8_t reset_disk(uint8_t drive);
-uint8_t read_sectors_chs(uint8_t drive, uint8_t head, uint8_t cylinder, uint8_t sector, uint8_t count, uint8_t* buffer);
-uint8_t read_sectors_lba(uint8_t drive, uint32_t lba, uint8_t count, uint8_t* buffer);
-uint16_t cluster_to_sector(uint16_t cluster);
-uint8_t read_root_directory(uint8_t drive, uint8_t* root_directory_buffer);
-uint8_t find_file(const uint8_t* root_directory_buffer, const char* file_name_str, uint16_t* found_file_cluster, uint32_t* file_size);
-uint8_t load_file(uint8_t drive, uint16_t file_cluster, uint32_t file_size, uint8_t* destination);
-uint8_t check_a20_gate();
-uint8_t enable_a20_gate_via_bios();
+__attribute__((noinline)) void print_string(const char* str); //not working after no inline
+__attribute__((noinline)) void lba_to_chs(uint32_t lba, uint8_t* head, uint8_t* cylinder, uint8_t* sector);
+__attribute__((noinline)) uint8_t reset_disk(uint8_t drive);
+__attribute__((noinline)) uint8_t read_sectors_chs(uint8_t drive, uint8_t head, uint8_t cylinder, uint8_t sector, uint8_t count, uint8_t* buffer);
+__attribute__((noinline)) uint8_t read_sectors_lba(uint8_t drive, uint32_t lba, uint8_t count, uint8_t* buffer);
+uint16_t cluster_to_sector(uint16_t cluster); //increase size after no inline
+__attribute__((noinline)) uint8_t read_root_directory(uint8_t drive, uint8_t* root_directory_buffer);
+__attribute__((noinline)) uint8_t find_file(const uint8_t* root_directory_buffer, const char* file_name_str, uint16_t* found_file_cluster, uint32_t* file_size);
+__attribute__((noinline)) uint8_t load_file(uint8_t drive, uint16_t file_cluster, uint32_t file_size, uint8_t* destination);
+__attribute__((noinline)) uint8_t check_a20_gate();
+__attribute__((noinline)) uint8_t enable_a20_gate_via_bios();
 static inline void io_out8(uint16_t port, uint8_t value);
 static inline uint8_t io_in8(uint16_t port);
-void enable_A20_keyboard();
+__attribute__((noinline)) void enable_A20_keyboard();
 static inline void a20wait();
 static inline void a20wait2();
 static inline void enable_a20_fast_a20();
@@ -39,38 +39,33 @@ __attribute__((aligned(8))) uint64_t gdt[] = {
         0x00CF92000000FFFF  // Data segment descriptor
 };
 
-__attribute__((aligned(8))) uint64_t gdt_protected[] = {
-        0x0000000000000000, // Null descriptor
-        0x00CF9A000000FFFF, // Code segment descriptor (32-bit)
-        0x00CF92000000FFFF,  // Data segment descriptor (32-bit)
-        0x00019A000000FFFF, // Code segment descriptor (16-bit)
-        0x000192000000FFFF  // Data segment descriptor (16-bit)
-
-};
-
 struct GDTPointer gdt_info = {
         .limit = sizeof(gdt) - 1,
         .base = (uint32_t)&gdt
 };
 
-struct GDTPointer gdt_protected_info = {
-        .limit = sizeof(gdt_protected) - 1,
-        .base  = (uint32_t)&gdt_protected
-};
-
 const char* disk_error_msg = "Disk error!\r\n";
-const char* hello_second_stage_msg = "Hello second stage!\r\n";
 const char* kernel_not_found_msg = "KERNEL.BIN not found!\r\n";
+const char* a20_error_msg = "A20 Gate is not available. Critical ERROR...\r\n";
+
+const char* loading_kernel_msg = "Loading KERNEL.BIN...\r\n";
+
+const char* jumping_to_kernel_msg = "Jumping to KERNEL.BIN...\r\n";
+
+#ifdef DEBUG
+const char* hello_second_stage_msg = "Hello second stage!\r\n";
+
 const char* check_a20_gate_msg = "Checking A20 gate...\r\n";
 const char* enable_a20_gate_msg = "Enabling A20 gate...\r\n";
-const char* a20_error_msg = "A20 Gate is not available. Critical ERROR...\r\n";
 const char* a20_gate_enabled_msg = "A20 gate enabled!\r\n";
+
 const char* jump_to_unreal_mode_msg = "Jumping to Unreal Mode...\r\n";
 const char* jumped_to_unreal_mode_msg = "Jumped to Unreal Mode!\r\n";
-const char* loading_kernel_msg = "Loading KERNEL.BIN...\r\n";
+
 const char* loading_done_msg = "Loading done!\r\n";
 const char* error_resetting_disk = "Error while resetting disk!\r\n";
-const char* jumping_to_kernel_msg = "Jumping to KERNEL.BIN...\r\n";
+#endif
+
 
 const char* file_name = "KERNEL  BIN";
 
@@ -81,11 +76,18 @@ __attribute__((noreturn)) void c_loader(){
 
     uint8_t status = reset_disk(drive_number);
     if (status){
+#ifdef DEBUG
         print_string(error_resetting_disk);
+#else
+        print_string(disk_error_msg);
+#endif
         goto halt;
     }
 
+#ifdef DEBUG
     print_string(hello_second_stage_msg);
+#endif
+
     status = read_root_directory(drive_number, root_directory);
     if (status){
         print_string(disk_error_msg);
@@ -98,9 +100,13 @@ __attribute__((noreturn)) void c_loader(){
         goto halt;
     }
 
+#ifdef DEBUG
     print_string(check_a20_gate_msg);
+#endif
     if(!check_a20_gate()){
+#ifdef DEBUG
         print_string(enable_a20_gate_msg);
+#endif
         uint8_t a20_gate_enabled = enable_a20_gate_via_bios();
         if (!check_a20_gate() || !a20_gate_enabled){
             enable_A20_keyboard();
@@ -113,11 +119,15 @@ __attribute__((noreturn)) void c_loader(){
             }
         }
     }
+#ifdef DEBUG
     print_string(a20_gate_enabled_msg);
 
     print_string(jump_to_unreal_mode_msg);
+#endif
     enable_unreal_mode();
+#ifdef DEBUG
     print_string(jumped_to_unreal_mode_msg);
+#endif
 
     print_string(loading_kernel_msg);
     status = load_file(drive_number, kernel_cluster, kernel_size, kernel_buffer);
@@ -125,28 +135,15 @@ __attribute__((noreturn)) void c_loader(){
         print_string(disk_error_msg);
         goto halt;
     }
+#ifdef DEBUG
     print_string(loading_done_msg);
+#endif
 
     print_string(jumping_to_kernel_msg);
 
     __asm__ __volatile__(
             "jmp jump_to_kernel"
     );
-
-    //It doesn't work because it generates jump 0x08:0x0000 instead 0x08:0x100000. Maybe -m16 flag does wrong generating?
-    /*__asm__ __volatile__ (
-            "cli                            \n\t"
-
-            "lgdt (%0)                      \n\t"
-
-            "mov %%cr0, %%eax               \n\t"
-            "or $0x1, %%eax                 \n\t"
-            "mov %%eax, %%cr0               \n\t"
-            "ljmp 0x8, 0x100000             \n\t"
-            :
-            : "r" (&gdt_protected_info)
-            : "eax", "memory"
-            );*/
 
     halt:
     for (;;)
@@ -210,18 +207,17 @@ uint8_t read_sectors_chs(uint8_t drive, uint8_t head, uint8_t cylinder, uint8_t 
     return status;
 }
 
-uint8_t read_sectors_lba(uint8_t drive, uint32_t lba, uint8_t count, uint8_t* buffer){
+uint8_t read_sectors_lba(const uint8_t drive, uint32_t lba, uint8_t count, uint8_t* buffer){
     uint8_t head, cylinder, sector;
-    uint8_t sectors_to_read;
 
     while(count > 0){
         lba_to_chs(lba, &head, &cylinder, &sector);
-        sectors_to_read = sectors_per_track - sector + 1;
+        uint8_t sectors_to_read = (uint8_t) sectors_per_track - sector + (uint8_t) 1;
 
         if (sectors_to_read > count)
             sectors_to_read = count;
 
-        uint8_t status = read_sectors_chs(drive, head, cylinder, sector, sectors_to_read, buffer);
+        const uint8_t status = read_sectors_chs(drive, head, cylinder, sector, sectors_to_read, buffer);
         if (status)
             return status;
         count -= sectors_to_read;
@@ -429,6 +425,7 @@ void enable_unreal_mode() {
 
             "unreal_label%=:                  \n\t"
             "pop %%ds                       \n\t"
+            "hlt"
             :
             : "r" (&gdt_info)
             : "eax", "ebx", "memory"
