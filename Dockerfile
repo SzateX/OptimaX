@@ -6,4 +6,5 @@ RUN apt-get update && \
           qemu-utils \
           linux-image-generic \
           mtools \
-          python3 python3-pip python3-guestfs && pip3 install cmake
+          python3 python3-pip python3-guestfs \
+          grub-pc-bin && pip3 install cmake
