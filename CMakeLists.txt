@@ -59,24 +59,12 @@ if (bootloader_type STREQUAL "own")
     add_dependencies(floppy_image bootloader)
 
 elseif (bootloader_type STREQUAL "grub")
-    # Custom command to create the floppy image
+    # Point to your script in the source tree (update path if needed).
+    set(CREATE_GRUB_FLOPPY_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/create_grub_floppy.sh")
+
     add_custom_command(
             OUTPUT ${FLOPPY_IMG}
-            COMMAND ${CMAKE_COMMAND} -E echo "Creating floppy image with GRUB bootloader..."
-            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/boot
-            # Create empty floppy image
-            COMMAND dd if=/dev/zero of=${FLOPPY_IMG} bs=1024 count=1440
-            # Format the image with FAT12 filesystem
-            COMMAND mkfs.msdos -F 12 -I ${FLOPPY_IMG}
-            # Install GRUB bootloader
-            COMMAND losetup -fP ${FLOPPY_IMG}
-            COMMAND grub-install --boot-directory=${CMAKE_BINARY_DIR}/boot --target=i386-pc --no-floppy --modules="normal part_msdos fat multiboot" `losetup -j ${FLOPPY_IMG} | cut -d ':' -f 1`
-            # Detach the loop device
-            COMMAND losetup -d `losetup -j ${FLOPPY_IMG} | cut -d ':' -f 1`
-            # Copy the kernel into the root directory
-            COMMAND mcopy -i ${FLOPPY_IMG} ${KERNEL_BIN} ::/KERNEL.BIN
-            COMMAND mcopy -i ${FLOPPY_IMG} -s ../file_system/DATA ::/DATA
-            COMMAND mcopy -i ${FLOPPY_IMG} -s ../file_system/ENV ::/ENV
+            COMMAND /bin/bash ${CREATE_GRUB_FLOPPY_SCRIPT} ${FLOPPY_IMG} ${KERNEL_BIN}
             DEPENDS ${KERNEL_BIN}
             COMMENT "Creating floppy image with GRUB bootloader"
     )
