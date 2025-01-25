@@ -41,10 +41,19 @@ dd if="$GRUB_IMG" of="$FLOPPY_IMG" conv=notrunc seek=1
 mformat -i "$FLOPPY_IMG" -kR $((SIZE + 2))
 mmd -i "$FLOPPY_IMG" grub
 
+echo "Kernel binary: $KERNEL_BIN"
+
+if grub-file --is-x86-multiboot "$KERNEL_BIN"; then
+  echo multiboot confirmed
+else
+  echo the file is not multiboot
+fi
+
 # 7) Optionally copy the kernel or other files
 if [ -n "$KERNEL_BIN" ] && [ -f "$KERNEL_BIN" ]; then
   echo "Copying kernel: $KERNEL_BIN"
   mcopy -i "$FLOPPY_IMG" "$KERNEL_BIN" ::/KERNEL.BIN
+  mcopy -i "$FLOPPY_IMG" ../grub_config/grub.cfg ::/grub/grub.cfg
 fi
 
 echo "Floppy image created successfully at: $FLOPPY_IMG"

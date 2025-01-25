@@ -144,3 +144,6 @@ fabric.properties
 *.cbp
 .cmake/
 *.mem
+
+*.BIN
+*.bin

@@ -3,6 +3,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(OptimaX C)
 
+set(CMAKE_VERBOSE_MAKEFILE ON)
+
 set(BUILD_ARCH "i386")
 set(BUILD_PLATFORM "pc")
 set(BOOT_DISK_FILE_SYSTEM "fat12")
@@ -14,7 +16,8 @@ set(CMAKE_C_COMPILER "/usr/bin/clang")
 
 # Paths
 set(FLOPPY_IMG ${CMAKE_BINARY_DIR}/floppy.img)
-set(KERNEL_BIN ../file_system/KERNEL.BIN)
+
+add_subdirectory(src/kernel)
 
 if (bootloader_type STREQUAL "own")
     set(BOOTLOADER_OUTPUT_DIR ${CMAKE_BINARY_DIR}/bootloader_output)
@@ -42,7 +45,7 @@ if (bootloader_type STREQUAL "own")
             COMMAND mcopy -i ${FLOPPY_IMG} ${STAGE2_BIN} ::/secondst.bin
             # Copy the kernel into the root directory
             # COMMAND ls -la .
-            COMMAND mcopy -i ${FLOPPY_IMG} ${KERNEL_BIN} ::/KERNEL.BIN
+            COMMAND mcopy -i ${FLOPPY_IMG} $<TARGET_FILE:kernel> ::/KERNEL.BIN
             COMMAND mcopy -i ${FLOPPY_IMG} -s ../file_system/DATA ::/DATA
             COMMAND mcopy -i ${FLOPPY_IMG} -s ../file_system/ENV ::/ENV
             DEPENDS ${BOOTLOADER_BIN} ${STAGE2_BIN}
@@ -56,7 +59,7 @@ if (bootloader_type STREQUAL "own")
     )
 
     # Add a dependency to ensure bootloader is built before floppy_image
-    add_dependencies(floppy_image bootloader)
+    add_dependencies(floppy_image bootloader kernel)
 
 elseif (bootloader_type STREQUAL "grub")
     # Point to your script in the source tree (update path if needed).
@@ -64,8 +67,8 @@ elseif (bootloader_type STREQUAL "grub")
 
     add_custom_command(
             OUTPUT ${FLOPPY_IMG}
-            COMMAND /bin/bash ${CREATE_GRUB_FLOPPY_SCRIPT} ${FLOPPY_IMG} ${KERNEL_BIN}
-            DEPENDS ${KERNEL_BIN}
+            COMMAND /bin/bash ${CREATE_GRUB_FLOPPY_SCRIPT} ${FLOPPY_IMG} $<TARGET_FILE:kernel>
+            DEPENDS kernel
             COMMENT "Creating floppy image with GRUB bootloader"
     )
 
@@ -74,6 +77,8 @@ elseif (bootloader_type STREQUAL "grub")
             floppy_image ALL
             DEPENDS ${FLOPPY_IMG}
     )
+
+    add_dependencies(floppy_image kernel)
 else ()
     message(FATAL_ERROR "Bootloader type '${bootloader_type}' is not supported.")
 endif ()
