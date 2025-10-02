@@ -817,7 +817,7 @@ load_memory_map:
     push di
 
     ; Push initial entries count
-    mov eax, 0
+    xor eax, eax
     push eax
 
     add di, 4 ; Reserve space for entries count
@@ -855,6 +855,80 @@ load_memory_map:
     mov [multiboot_info + Multiboot_Boot_Info.mmap_length], eax
     movzx dword [multiboot_info + Multiboot_Boot_Info.mmap_addr], di
     ret
+
+
+;--------------------------------------------
+; Simple bubble sort based on the base address
+; Input: ESI = Address of memory map, ECX = Length of memory map
+; Each entry is 24 bytes
+;--------------------------------------------
+sort_memory_map:
+    push bp
+    mov bp, sp
+    sub sp, 8 ; Local variable:
+              ; -4(bp) = n
+              ; -8(bp) = newn
+
+    pushad
+
+    ; n = length
+    mov [bp-4], ecx
+
+.sort_memory_map_loop:
+    ; newn = 0
+    mov dword [bp-8], 0
+    ; for i = 1 to n-1
+    mov ecx, 1
+.inner_loop:
+    cmp ecx, [bp-4]             ; i < n ?
+    jae .end_inner              ; if i >= n, exit loop
+
+    mov eax, ecx
+    imul eax, eax, 24 ; eax = i * 24 (size of each entry)
+    add eax, esi ; eax = address of entry i
+    mov edi, eax
+    sub edi, 24 ; edi = address of entry i-1
+    ; if entry[i-1].base_addr > entry[i].base_addr
+    mov ebx, [edi + 8] ; Load base_addr_high of entry i-1
+    cmp ebx, [eax + 8] ; Compare with base_addr_high of entry i
+    ja .swap_entries
+    jb .no_swap
+    mov ebx, [edi + 4] ; Load base_addr of entry i-1
+    cmp ebx, [eax + 4] ; Compare with base_addr of entry i
+
+    jbe .no_swap
+    ; Swap entries
+.swap_entries:
+    push ecx
+    mov ecx, 6
+    ; Swap 6 dwords (24 bytes)
+.swap_loop:
+    mov ebx, [edi]
+    mov edx, [eax]
+    mov [edi], edx
+    mov [eax], ebx
+    add edi, 4
+    add eax, 4
+    loop .swap_loop
+    pop ecx
+    mov [bp-8], ecx ; newn = i
+.no_swap:
+    inc ecx
+    jmp .inner_loop
+
+.end_inner:
+    ; n = newn
+    mov eax, [bp-8]
+    mov [bp-4], eax
+    ; until n <= 1
+    cmp dword [bp-4], 1
+    jnle .sort_memory_map_loop
+.exit:
+    popad
+    mov sp, bp
+    pop bp
+    ret
+
 
 ;--------------------------------------------
 ; String printing routine

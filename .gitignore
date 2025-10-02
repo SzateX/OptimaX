@@ -147,3 +147,5 @@ fabric.properties
 
 *.BIN
 *.bin
+
+.idea/copilot.data.migration.*.xml
