@@ -96,7 +96,8 @@ void terminal_writestring(const char* data)
 
 void kernel_main(void)
 {
-	/* Initialize terminal interface */
+	for (int i = 0; i < 10000; i++) {}
+
 	terminal_initialize();
 
 	/* Newline support is left as an exercise. */

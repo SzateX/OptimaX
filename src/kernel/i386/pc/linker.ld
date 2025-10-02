@@ -22,22 +22,23 @@ SECTIONS
     */
     . = 0x00100000;
 
-    .text ALIGN(4):
+    .text ALIGN(4): AT(ADDR(.text))
     {
         KEEP(*(.text))
     }
 
-    .rodata ALIGN(4):
+    .rodata ALIGN(4): AT(ADDR(.rodata))
     {
         *(.rodata)
+        *(.rodata*)
     }
 
-    .data ALIGN(4):
+    .data ALIGN(4): AT(ADDR(.data))
     {
         *(.data)
     }
 
-    .bss ALIGN(4):
+    .bss ALIGN(4): AT(ADDR(.bss))
     {
         *(COMMON)
         *(.bss)

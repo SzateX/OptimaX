@@ -10,7 +10,7 @@ set(BUILD_PLATFORM "pc")
 set(BOOT_DISK_FILE_SYSTEM "fat12")
 
 # bootloader type = own (custom bootloader) | grub (GRUB bootloader)
-set(bootloader_type "grub")
+set(bootloader_type "own")
 
 set(CMAKE_C_COMPILER "/usr/bin/clang")
 

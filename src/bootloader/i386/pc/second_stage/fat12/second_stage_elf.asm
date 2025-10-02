@@ -1,5 +1,6 @@
-; second_stage.asm
+; second_stage_elf.asm
 %include "elf.asm"
+%include "multiboot.asm"
 
 org 0xF000
 
@@ -15,9 +16,16 @@ start:
     mov gs, ax
     mov ss, ax
     mov sp, 0x7C00
+    mov bp, sp
+    sub sp, 13 ; Local variables:
+                ; -1(bp) = drive number
+                ; -3(bp) = kernel start cluster
+                ; -7(bp) = kernel file size
+                ; -9(bp) = elf entry point segment
+                ; -13(bp) = elf wntry point
 
     movzx dx, dl
-    mov [drive_number], dx
+    mov [bp-1], dl ; Save drive number in local variable
 
     call hello_second_stage
 
@@ -36,8 +44,8 @@ start:
     test al, al
     jz kernel_not_found
 
-    push cx ; Save Found Cluster
-    push ebx ; Save File Size
+    mov [bp-3], cx ; Save Found Cluster
+    mov [bp-7], ebx ; Save File Size
 
     call check_a20_gate
     test al, al
@@ -62,13 +70,135 @@ a20_ready:
     jmp enable_unreal_mode
 
 load_kernel:
-    pop ebx ; Restore File Size
-    pop ax ; Restore Found Cluster
-    mov edi, [kernel_buffer]
-    mov dl, [drive_number]
+.load_elf_header:
+    mov ebx, 8192 ; Load first 8KiB of a file.
+    mov ax, [bp-3]  ; Load Found Cluster
+    mov edi, [elf_header_buffer] ; Load ELF header buffer address
+    mov dl, [bp-1]
     call load_file
     test ah, ah
     jnz disk_error
+
+.check_multiboot_signature:
+; Look in 8KiB buffer for Multiboot signature (0x1BADB002) aligned to 4 bytes
+    mov edi, [elf_header_buffer]
+    mov ecx, 2048 ; 8KiB / 4 bytes
+    mov eax, 0x1BADB002 ; Multiboot signature
+    repne scasd
+    jne kernel_not_found
+
+    sub edi, 4 ; Adjust EDI to point to the signature
+    mov eax, [edi] ; Load the signature into EAX
+    add eax, [edi + 4] ; Load the flags into EBX
+    add eax, [edi + 8] ; Load the checksum into ECX
+    cmp eax, 0
+    jne kernel_not_found ; If the sum is not zero, it's not a valid Multiboot header
+
+.identify_elf:
+    ; Check if the file is a valid ELF file
+    mov esi, [elf_header_buffer]
+    cmp dword [esi + Elf32_Ehdr.e_ident + Elf32_Ident.ei_mag], 0x464C457F ; Check for ELF magic number
+    jne kernel_not_found
+
+    ; Check if it's a 32-bit ELF file
+    cmp byte [esi + Elf32_Ehdr.e_ident + Elf32_Ident.ei_class], 1 ; EI_CLASS
+    jne kernel_not_found
+
+    ; Check if it's little-endian
+    cmp byte [esi + Elf32_Ehdr.e_ident + Elf32_Ident.ei_data], 1 ; EI_DATA
+    jne kernel_not_found
+
+    ; Check if it's version 1
+    cmp byte [esi + Elf32_Ehdr.e_ident + Elf32_Ident.ei_version], 1 ; EI_VERSION
+    jne kernel_not_found
+
+    ; Check if it's an executable file
+    cmp word [esi + Elf32_Ehdr.e_type], 2 ; ET_EXEC
+    jne kernel_not_found
+
+.load_program_headers:
+    mov esi, [elf_header_buffer] ; Load ELF header buffer address
+
+    ; Load program headers
+    mov ecx, [esi + Elf32_Ehdr.e_phoff] ; e_phoff
+    movzx eax, word [esi + Elf32_Ehdr.e_phnum] ; e_phnum
+    movzx ebx, word [esi + Elf32_Ehdr.e_phentsize] ; e_phentsize
+    mul ebx ; Calculate size of all program headers
+    mov ebx, eax
+
+    mov dl, [bp-1] ; Drive number
+    mov ax, [bp-3] ; Load Found Cluster
+    mov edi, [elf_header_buffer] ; Load ELF header buffer address
+    add edi, Elf32_Ehdr_size ; Move to the start of program headers
+    call load_file_offset
+
+    test ah, ah
+    jnz disk_error
+
+    call debug
+
+.load_loadable_segments:
+    mov edx, [elf_header_buffer]
+
+    mov esi, edx
+    add esi, Elf32_Ehdr_size
+    movzx ecx, word [edx + Elf32_Ehdr.e_phnum]
+    movzx ebx, word [edx + Elf32_Ehdr.e_phentsize]
+.load_next_program_header:
+    test ecx, ecx
+    jz .load_segments_done
+
+    push ecx
+    push ebx
+    push esi
+    push edx
+    push edi
+
+    cmp dword [esi + Elf32_Phdr.p_type], 1  ; PT_LOAD
+    jne .skip_segment
+
+    mov ax, [bp-3] ; Load Found Cluster
+    mov ebx, [esi + Elf32_Phdr.p_filesz] ; p_filesz
+    mov ecx, [esi + Elf32_Phdr.p_offset] ; p_offset
+    mov edi, [esi + Elf32_Phdr.p_paddr] ; p_paddr
+    mov dl, [bp-1]
+    cmp edi, 0
+    jz .skip_segment ; Skip if p_paddr is zero
+
+    call load_file_offset
+
+    test ah, ah
+    jnz disk_error
+
+    mov ecx, [esi + Elf32_Phdr.p_memsz] ; p_memsz
+    mov ebx, [esi + Elf32_Phdr.p_filesz] ; p_filesz
+    cmp ecx, ebx
+    jz .skip_segment ; If p_memsz == p_filesz, skip zeroing
+    ; Zero out the memory if p_memsz > p_filesz
+    xor eax, eax
+    sub ecx, ebx ; Calculate size to zero
+    mov edi, [esi + Elf32_Phdr.p_paddr] ; p_paddr
+    add edi, ebx ; Move edi to the end of the loaded segment
+    a32 rep stosb ; Zero out the memory
+
+.skip_segment:
+    pop edi
+    pop edx
+    pop esi
+    pop ebx
+    pop ecx
+    add esi, ebx
+    dec ecx
+    jmp .load_next_program_header
+
+.load_segments_done:
+    mov eax, [edx + Elf32_Ehdr.e_entry]
+    test eax, eax
+    jz kernel_not_found
+
+    mov [bp-13], eax ; Save entry point
+
+    call debug
 
 jump_to_kernel:
     ; Load the GDT
@@ -77,19 +207,25 @@ jump_to_kernel:
     mov bx, 0x0000
     mov es, bx
     ; Buffer offset
-    mov bx, 0x5C00
+    mov bx, [memory_map_buffer]
     mov di, bx
     call load_memory_map
 
     ; Jump to the kernel
-    ;enter protected mode (32 bit)
+    ; enter protected mode (32 bit)
     mov eax, cr0
     or eax, 1
     mov cr0, eax
-    jmp dword 0x08:0x100000
+    jmp 0x08:protected_mode
+
+[BITS 32]
+protected_mode:
+    mov eax, 0x2BADB002; ; Multiboot magic number
+
+    jmp dword [bp-13]
     jmp $
 
-
+[BITS 16]
 ;--------------------------------------------
 ; Disk reset function
 ; Input: DL = Drive number
@@ -345,23 +481,53 @@ find_file:
 load_file:
     push bp
     mov bp, sp
-    sub sp, 11              ; Local variables:
-                          ; -2(bp) = sectors to read
+    push ecx
+    xor ecx, ecx          ; Clear ECX for loading byte offset
+    call load_file_offset
+.exit:
+    pop ecx
+    mov sp, bp
+    pop bp
+    ret
+
+;--------------------------------------------
+; Load File Offset
+; Input: DL = Drive, AX = File first cluster, EBX = Bytes to load, ECX = Loading byte offset,  EDI = Destination
+; Output: AH = Status (0 = success, else error)
+;--------------------------------------------
+load_file_offset:
+    push bp
+    mov bp, sp
+    sub sp, 14              ; Local variables:
+                          ; -2(bp) = sectors to read in one iteration
                           ; -4(bp) = file size in sectors
                           ; -6(bp) = current LBA
                           ; -10(bp) = destination pointer
-                          ; -11(bp) = drive number
+                          ; -12(bp) = drive number
+                          ; -14(bp) = bytes to skip
 
-    push cx
     push esi
     push edi
+    push edx
 
-    mov [bp-10], edi        ; Save destination pointer
-    mov [bp-11], dl         ; Save drive number
+    mov dword [bp-10], edi        ; Save destination pointer
+    mov [bp-12], dl         ; Save drive number
 
     ; Calculate initial LBA from cluster
     call cluster_to_sector
     mov [bp-6], ax        ; Save LBA
+
+    push ebx
+
+    ; Calculate offset in sectors and bytes to skip
+    mov eax, ecx          ; Load offset in EAX
+    mov ebx, 512          ; Bytes per sector
+    xor edx, edx          ; Clear high bits for division
+    div ebx               ; EAX = sectors, EDX = remainder
+    mov [bp-14], dx       ; Store bytes to skip
+    add [bp-6], ax        ; Update LBA with sectors offset
+
+    pop ebx
 
     ; Calculate file size in sectors
     mov eax, ebx          ; File size to EAX
@@ -391,18 +557,19 @@ load_file:
     mov ax, [bp-6]        ; Load LBA
     mov cx, [bp-2]        ; Load sectors count
     mov bx, [disk_buffer]        ; disk_buffer address
-    mov dl, [bp-11]       ; Drive number
+    mov dl, [bp-12]       ; Drive number
     call read_sectors_lba
     test ah, ah           ; Check status
     jnz .exit             ; Exit if error
 
     ; Copy from disk buffer to destination
     movzx esi, word [disk_buffer]        ; Source: disk buffer
+    add esi, [bp-14]      ; Adjust source pointer by bytes to skip
     mov edi, [bp-10]        ; Destination
-    mov cx, [bp-2]        ; Number of sectors
-    mov ax, 512
-    mul cx               ; AX = sectors * 512
-    mov cx, ax           ; CX = number of bytes to copy
+    movzx ecx, word [bp-2]        ; Number of sectors
+    mov eax, 512
+    mul ecx               ; AX = sectors * 512
+    mov ecx, eax           ; CX = number of bytes to copy
     a32 rep movsb            ; Copy CX bytes from DS:SI to ES:DI
 
     ; Update pointers and counters
@@ -414,6 +581,7 @@ load_file:
     mov ax, [bp-2]
     add [bp-6], ax          ; Update LBA
     sub [bp-4], ax          ; Decrease remaining sectors
+    mov word [bp-14], 0          ; Reset bytes to skip for next iteration
 
     jmp .read_loop
 
@@ -421,12 +589,14 @@ load_file:
     xor ah, ah              ; Return success status
 
 .exit:
+    pop edx
     pop edi
     pop esi
-    pop cx
+
     mov sp, bp
     pop bp
     ret
+
 
 ;--------------------------------------------
 ; A20 Gate Enable Check
@@ -650,10 +820,9 @@ load_memory_map:
     mov eax, 0
     push eax
 
-    .load_memory_map_loop:
-    ; Increment pointer in buffer
-    add di, 24
+    add di, 4 ; Reserve space for entries count
 
+    .load_memory_map_loop:
     ; Increment entries count
     pop eax
     inc eax
@@ -672,15 +841,19 @@ load_memory_map:
     ; Disable interrupts (can be enabled by int 0x15)
     cli
 
+    mov [di-4], ecx ; Store size of the entry
+
     ; Exit if ebx is equal to zero (reading has ended)
     cmp ebx, 0
+    ; Increment pointer in buffer
+    add di, 24
     jne .load_memory_map_loop
 
     ; Store entries count at the begin of the buffer
     pop eax
     pop di
-    mov [di], eax
-
+    mov [multiboot_info + Multiboot_Boot_Info.mmap_length], eax
+    movzx dword [multiboot_info + Multiboot_Boot_Info.mmap_addr], di
     ret
 
 ;--------------------------------------------
@@ -792,9 +965,11 @@ print_hex_nibble:
     ret
 
 
-drive_number db 0x00
 root_directory dw 0x7E00
 kernel_buffer dd 0x100000
+elf_header_buffer dd 0x500
+multiboot_info dd (0x500 + Elf32_Ehdr_size)
+memory_map_buffer dd (0x500 + Elf32_Ehdr_size + 116)
 disk_buffer dw 0x7E00
 hello_second_stage_msg db "Hello second stage!", 10, 13, 0
 kernel_file_name db "KERNEL  BIN", 0

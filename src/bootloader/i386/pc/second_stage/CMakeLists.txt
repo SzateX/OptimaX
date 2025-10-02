@@ -22,13 +22,14 @@ set(CMAKE_C_FLAGS_DEBUG "${COMPILER_FLAGS} -DDEBUG")
 set(CMAKE_C_FLAGS_RELEASE "${COMPILER_FLAGS}")
 
 if(BOOT_DISK_FILE_SYSTEM MATCHES "fat12")
-    set(SECOND_STAGE fat12/second_stage.asm)
+    set(SECOND_STAGE fat12/second_stage_elf.asm)
+    set(STAGE2_INC "${CMAKE_CURRENT_SOURCE_DIR}/fat12")
     set_source_files_properties(${SECOND_STAGE} PROPERTIES LANGUAGE ASM_NASM)
 
     add_custom_command(
             OUTPUT ${BOOTLOADER_OUTPUT_DIR}/secondst.bin
             COMMAND ${CMAKE_COMMAND} -E make_directory ${BOOTLOADER_OUTPUT_DIR}
-            COMMAND ${CMAKE_ASM_NASM_COMPILER} ${CMAKE_ASM_NASM_FLAGS} ${CMAKE_CURRENT_SOURCE_DIR}/${SECOND_STAGE} -o ${BOOTLOADER_OUTPUT_DIR}/secondst.bin
+            COMMAND ${CMAKE_ASM_NASM_COMPILER} ${CMAKE_ASM_NASM_FLAGS} ${CMAKE_CURRENT_SOURCE_DIR}/${SECOND_STAGE} -I "${STAGE2_INC}" -o ${BOOTLOADER_OUTPUT_DIR}/secondst.bin
             DEPENDS ${SECOND_STAGE}
             COMMENT "Assembling Stage 2 Bootloader"
     )

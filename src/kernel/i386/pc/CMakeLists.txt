@@ -20,7 +20,7 @@ set(CMAKE_ASM_NASM_FLAGS "-f elf32")
 set(CMAKE_ASM_NASM_FLAGS_ELF32 "-f elf32")
 
 set(FLAGS_COMMON "-fuse-ld=lld -target i386-pc-none-elf -march=i386 -ffreestanding -nostdlib -fno-pic -fno-pie -static")
-set(CMAKE_C_FLAGS_DEBUG "${FLAGS_COMMON} -DDEBUG")
+set(CMAKE_C_FLAGS_DEBUG "${FLAGS_COMMON} -g -O0 -ggdb")
 set(CMAKE_C_FLAGS_RELEASE "${FLAGS_COMMON}")
 
 set(LINKER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/linker.ld)
