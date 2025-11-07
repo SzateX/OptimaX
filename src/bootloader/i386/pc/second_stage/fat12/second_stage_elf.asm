@@ -853,7 +853,8 @@ load_memory_map:
     pop eax
     pop di
     mov [multiboot_info + Multiboot_Boot_Info.mmap_length], eax
-    movzx dword [multiboot_info + Multiboot_Boot_Info.mmap_addr], di
+    movzx eax, di
+    mov [multiboot_info + Multiboot_Boot_Info.mmap_addr], eax
     ret
 
 
