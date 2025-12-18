@@ -29,7 +29,7 @@ if(BOOT_DISK_FILE_SYSTEM MATCHES "fat12")
     add_custom_command(
             OUTPUT ${BOOTLOADER_OUTPUT_DIR}/secondst.bin
             COMMAND ${CMAKE_COMMAND} -E make_directory ${BOOTLOADER_OUTPUT_DIR}
-            COMMAND ${CMAKE_ASM_NASM_COMPILER} ${CMAKE_ASM_NASM_FLAGS} ${CMAKE_CURRENT_SOURCE_DIR}/${SECOND_STAGE} -I "${STAGE2_INC}" -o ${BOOTLOADER_OUTPUT_DIR}/secondst.bin
+            COMMAND ${CMAKE_ASM_NASM_COMPILER} ${CMAKE_ASM_NASM_FLAGS} ${CMAKE_CURRENT_SOURCE_DIR}/${SECOND_STAGE} -I "${STAGE2_INC}" -o ${BOOTLOADER_OUTPUT_DIR}/secondst.bin -l ${BOOTLOADER_OUTPUT_DIR}/secondst.lst
             DEPENDS ${SECOND_STAGE}
             COMMENT "Assembling Stage 2 Bootloader"
     )

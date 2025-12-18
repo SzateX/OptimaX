@@ -860,7 +860,7 @@ load_memory_map:
 
 ;--------------------------------------------
 ; Simple bubble sort based on the base address
-; Input: ESI = Address of memory map, ECX = Length of memory map
+; Input: ESI = Address of memory map, ECX = Number of entries
 ; Each entry is 24 bytes
 ;--------------------------------------------
 sort_memory_map:
@@ -890,12 +890,12 @@ sort_memory_map:
     mov edi, eax
     sub edi, 24 ; edi = address of entry i-1
     ; if entry[i-1].base_addr > entry[i].base_addr
-    mov ebx, [edi + 8] ; Load base_addr_high of entry i-1
-    cmp ebx, [eax + 8] ; Compare with base_addr_high of entry i
+    mov ebx, [edi + 4] ; Load base_addr_high of entry i-1
+    cmp ebx, [eax + 4] ; Compare with base_addr_high of entry i
     ja .swap_entries
     jb .no_swap
-    mov ebx, [edi + 4] ; Load base_addr of entry i-1
-    cmp ebx, [eax + 4] ; Compare with base_addr of entry i
+    mov ebx, [edi + 0] ; Load base_addr_low of entry i-1
+    cmp ebx, [eax + 0] ; Compare with base_addr_low of entry i
 
     jbe .no_swap
     ; Swap entries
@@ -929,6 +929,127 @@ sort_memory_map:
     mov sp, bp
     pop bp
     ret
+
+;--------------------------------------------
+; Combine adjacent and overlaping memory map entries
+; Input: ESI = Address of memory map, ECX = Number of entries
+; Each entry is 24 bytes
+;--------------------------------------------
+combine_entries_in_memory_map:
+    push bp
+    mov bp, sp
+    sub sp, 12 ; Local variable:
+               ; -4(bp) = w (write index)
+               ; -8(bp) = r (read index)
+               ; -12(bp) = n (total entries)
+
+    pushad
+
+    cmp ecx, 1
+    jle .exit ; If 0 or 1 entries, nothing to combine
+
+    mov [bp-12], ecx ; total entries
+    xor eax, eax
+    mov [bp-4], eax ; w = 0
+    mov dword [bp-8], 1   ; r = 1
+
+    mov edi, esi    ; base pointer to table
+
+    ; Load current entry (index 0)
+    mov esi, [edi + 0]   ; cur_base
+    mov ebx, [edi + 8]   ; cur_length
+    mov cl,  [edi + 16]  ; cur_type
+
+.loop:
+    mov edx, [bp-8]
+    cmp edx, [bp-12]
+    jae .flush_last
+
+    ; Address of next entry: edi + r*24
+    mov eax, [bp-8]
+    imul eax, eax, 24
+    add eax, edi          ; eax = address of next entry
+
+    mov edx, [eax + 0]    ; next_base
+    mov ebp, [eax + 8]    ; next_length
+    mov dh,  [eax + 16]   ; next_type
+
+    ; cur_end in eax = cur_base + cur_length
+    mov eax, esi
+    add eax, ebx
+    ; next_end in ebp = next_base + next_length
+    add ebp, edx
+
+    ; If next starts after current end -> no overlap, emit current and advance
+    cmp edx, eax
+    ja .emit_and_advance
+
+    ; Overlap or adjacent: decide type by priority (higher value wins)
+    mov al, cl
+    call priority_rank
+    mov ah, al          ; rank_cur in AH
+    mov al, dh
+    call priority_rank
+    cmp al, ah
+    jbe .keep_cur_type
+    mov cl, dh          ; promote to higher priority type
+.keep_cur_type:
+    ; Extend current length to cover union
+    cmp ebp, eax
+    jbe .advance_only
+    mov ebx, ebp
+    sub ebx, esi        ; new length = end - base
+.advance_only:
+    inc dword [bp-8]
+    jmp .loop
+
+.emit_and_advance:
+    ; store current entry at w index
+    mov eax, [bp-4]
+    imul eax, eax, 24
+    add eax, edi
+    mov [eax + 0], esi
+    mov [eax + 8], ebx
+    mov [eax + 16], cl
+
+    inc dword [bp-4]       ; w++
+    ; Set current = next
+    mov esi, edx           ; cur_base = next_base
+    mov ebx, ebp
+    sub ebx, esi           ; length = end - base
+    mov cl, dh
+    inc dword [bp-8]       ; r++
+    jmp .loop
+
+.flush_last:
+    ; Write the final current entry
+    mov edx, [bp-4]
+    imul edx, edx, 24
+    add edx, edi
+    mov [edx + 0], esi
+    mov [edx + 8], ebx
+    mov [edx + 16], cl
+
+.exit:
+    popad
+    mov sp, bp
+    pop bp
+    ret
+
+; Returns rank in AL (higher is higher priority)
+priority_rank:
+    cmp al, 4
+    je .done
+    cmp al, 3
+    je .done
+    cmp al, 2
+    je .done
+    cmp al, 1
+    je .done
+    xor al, al
+.done:
+    ret
+
 
 
 ;--------------------------------------------

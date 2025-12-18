@@ -18,6 +18,7 @@ set(CMAKE_C_COMPILER "/usr/bin/clang")
 set(FLOPPY_IMG ${CMAKE_BINARY_DIR}/floppy.img)
 
 add_subdirectory(src/kernel)
+find_package(Python3 QUIET COMPONENTS Interpreter)
 
 if (bootloader_type STREQUAL "own")
     set(BOOTLOADER_OUTPUT_DIR ${CMAKE_BINARY_DIR}/bootloader_output)
@@ -81,4 +82,21 @@ elseif (bootloader_type STREQUAL "grub")
     add_dependencies(floppy_image kernel)
 else ()
     message(FATAL_ERROR "Bootloader type '${bootloader_type}' is not supported.")
+endif ()
+
+# Testing: provide a ctest target that runs the Unicorn-based pytest suite.
+enable_testing()
+if (Python3_Interpreter_FOUND)
+    add_test(
+        NAME stage2_unicorn
+        COMMAND ${Python3_EXECUTABLE} -m pytest ${CMAKE_SOURCE_DIR}/tests/test_stage2_unicorn.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+    set_tests_properties(stage2_unicorn PROPERTIES ENVIRONMENT "BOOTLOADER_BUILD_DIR=${CMAKE_BINARY_DIR}")
+    add_custom_target(check
+        COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+        DEPENDS bootloader_stage2
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        COMMENT "Running Unicorn-based bootloader unit tests"
+    )
 endif ()

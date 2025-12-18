@@ -30,3 +30,11 @@ struc Multiboot_Boot_Info
   .framebuffer_type resd 1
   .framebuffer_color_info resb 6
 endstruc
+
+struc Multiboot_Memory_Map_Entry
+  .base_addr_low resd 1
+  .base_addr_high resd 1
+  .length_low resd 1
+  .length_high resd 1
+  .type resd 1
+endstruc

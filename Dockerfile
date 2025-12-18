@@ -9,6 +9,7 @@ RUN apt-get update && \
       qemu-system-x86 qemu-system-gui qemu-utils \
       mtools xorriso grub-pc-bin grub-common cmake \
       python3 python3-pip python3-guestfs libguestfs-tools \
+      python3-pytest python3-unicorn \
       ca-certificates git curl pkg-config && \
     rm -rf /var/lib/apt/lists/*
 
